@@ -1,0 +1,9 @@
+node_modules
+.svelte-kit
+build
+.venv
+__pycache__
+.DS_Store
+*.log
+data/db.json.tmp
+data/audio/*.tmp

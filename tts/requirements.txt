@@ -1,0 +1,16 @@
+# Core (all platforms)
+fastapi>=0.110
+uvicorn>=0.29
+numpy>=1.26
+soundfile>=0.12
+huggingface_hub>=0.23
+
+# Ukrainian stress + IPA frontends (same ones the reference app uses)
+git+https://github.com/patriotyk/ukrainian-word-stress.git
+git+https://github.com/patriotyk/ipa-uk.git
+
+# ONNX runtime works on Windows, Linux and Apple Silicon.
+holos-tts-onnx>=0.4
+
+# Apple Silicon only. pip skips this line everywhere else.
+holos-tts-mlx>=0.1; sys_platform == "darwin" and platform_machine == "arm64"

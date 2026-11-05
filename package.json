@@ -1,0 +1,31 @@
+{
+	"name": "rationality-tts",
+	"private": true,
+	"version": "0.1.0",
+	"type": "module",
+	"scripts": {
+		"dev": "vite dev --port 5173",
+		"build": "vite build",
+		"preview": "vite preview",
+		"prepare": "svelte-kit sync || echo ''",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"tts": "HOLOS_MLX_MODEL=patriotyk/HolosTTS/mlx ../2026-11-01-i-want-to-try-to-1ceb0f8e/.venv/bin/python tts/server.py"
+	},
+	"devDependencies": {
+		"@sveltejs/adapter-node": "^6.0.0",
+		"@sveltejs/kit": "3.1.1",
+		"@sveltejs/vite-plugin-svelte": "7.3.1",
+		"@types/node": "^26.6.6",
+		"svelte": "5.57.3",
+		"svelte-check": "4.7.8",
+		"typescript": "6.0.3",
+		"vite": "8.3.5"
+	},
+	"dependencies": {
+		"@fontsource/inter": "^5.2.6"
+	},
+	"imports": {
+		"#lib": "./src/lib/index.js",
+		"#lib/*": "./src/lib/*"
+	}
+}
