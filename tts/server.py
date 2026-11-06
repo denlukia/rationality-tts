@@ -757,6 +757,11 @@ def ipa_to_arpabet(ipa_text: str) -> str:
     return " ".join(out)
 
 
+def ipa_to_arpabet_words(ipa_text: str) -> list[str]:
+    """Per-word ARPAbet, so each word can be wrapped in its own phoneme tag."""
+    return [ipa_to_arpabet(w) for w in ipa_text.split() if w.strip()]
+
+
 class IpaBody(BaseModel):
     text: str
 
@@ -770,10 +775,13 @@ def ipa_endpoint(body: IpaBody):
         raise HTTPException(400, "empty text")
     stressed = get_stressifier()(text)
     ipa_text = ipa_fn(stressed)
+    words = ipa_to_arpabet_words(ipa_text)
+    tagged = " ".join(f"<|phoneme_start|>{w}<|phoneme_end|>" for w in words)
     return {
         "stressed": stressed,
         "ipa": ipa_text,
-        "arpabet": ipa_to_arpabet(ipa_text),
+        "arpabet": tagged,
+        "arpabet_raw": " ".join(words),
     }
 
 
