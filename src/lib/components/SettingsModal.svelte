@@ -89,23 +89,7 @@
 		}
 	}
 
-	async function requestClose() {
-		if (dirty && !saving) {
-			saving = true;
-			try {
-				await fetch('/api/settings', {
-					method: 'POST',
-					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify(draft)
-				});
-				await invalidateAll();
-				onsaved?.();
-			} catch {
-				/* ignore */
-			} finally {
-				saving = false;
-			}
-		}
+	async function cancel() {
 		onclose();
 	}
 
@@ -227,15 +211,14 @@
 
 <svelte:window
 	onkeydown={(e) => {
-		if (e.key === 'Escape') requestClose();
+		if (e.key === 'Escape') cancel();
 	}}
 />
 
-<div class="overlay" onclick={requestClose} role="presentation">
+<div class="overlay" onclick={cancel} role="presentation">
 	<div class="panel" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
 		<div class="top">
 			<h2>налаштування</h2>
-			<button class="close" onclick={requestClose}>закрити</button>
 		</div>
 
 		<div class="block">
@@ -463,6 +446,13 @@
 			додати словник
 		</button>
 	</div>
+	</div>
+
+	<div class="actions">
+		<button class="black" onclick={cancel} disabled={saving}>скасувати</button>
+		<button class="black" onclick={save} disabled={saving}>
+			{saving ? 'зберігаю…' : 'зберегти'}
+		</button>
 	</div>
 </div>
 
