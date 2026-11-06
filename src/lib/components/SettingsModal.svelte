@@ -560,11 +560,11 @@
 		justify-content: space-between;
 		gap: 12px;
 	}
-	.small {
-		background: var(--ink);
-		color: #fff;
-		border-radius: 3px;
-		padding: 5px 9px;
+	.actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 8px;
+		margin-top: 8px;
 	}
 	textarea {
 		width: 100%;
