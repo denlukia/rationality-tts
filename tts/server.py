@@ -30,9 +30,11 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 
 ROOT = Path(__file__).resolve().parent.parent
-AUDIO_DIR = Path(os.getenv("AUDIO_DIR", ROOT / "data" / "audio")).resolve()
-AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-CUSTOM_VOICE_DIR = Path(os.getenv("VOICES_DIR", ROOT / "data" / "voices" / "custom")).resolve()
+DATA_DIR = Path(os.getenv("DATA_DIR", "data")).resolve()
+if not DATA_DIR.is_absolute():
+    DATA_DIR = (ROOT / DATA_DIR).resolve()
+AUDIO_DIR = Path(os.getenv("AUDIO_DIR", str(DATA_DIR / "audio"))).resolve()
+CUSTOM_VOICE_DIR = Path(os.getenv("VOICES_DIR", str(DATA_DIR / "voices" / "custom"))).resolve()
 CUSTOM_VOICE_DIR.mkdir(parents=True, exist_ok=True)
 ENCODER = Path(os.getenv("VOICE_ENCODER_SCRIPT", ROOT / "tts" / "voice_encoder.py"))
 VOICE_CHECKPOINT = Path(os.getenv("VOICE_ENCODER", ROOT / "models" / "holos" / "voice_encoder.pt"))
@@ -47,10 +49,10 @@ ONNX_MODEL = os.getenv("HOLOS_ONNX_MODEL", "patriotyk/HolosTTS/onnx-int8")
 
 # Drama 3 runs in its own virtualenv: mlx-audio has a different dependency set
 # from HolosTTS, and a separate process lets us reclaim its ~23 GB of RAM.
-DRAMA_MODEL = Path(os.getenv("DRAMA_MODEL", ROOT / "models" / "fish-audio-drama-3-3bit")).resolve()
+DRAMA_MODEL = Path(os.getenv("DRAMA_MODEL", str(ROOT / "models" / "fish-audio-drama-3-3bit"))).resolve()
 DRAMA_PYTHON = os.getenv("DRAMA_PYTHON", str(ROOT / ".venv-drama" / "bin" / "python"))
-DRAMA_WORKER = Path(os.getenv("DRAMA_WORKER", ROOT / "tts" / "drama_worker.py")).resolve()
-DRAMA_VOICE_DIR = Path(os.getenv("DRAMA_VOICES_DIR", ROOT / "data" / "voices" / "drama")).resolve()
+DRAMA_WORKER = Path(os.getenv("DRAMA_WORKER", str(ROOT / "tts" / "drama_worker.py"))).resolve()
+DRAMA_VOICE_DIR = Path(os.getenv("DRAMA_VOICES_DIR", str(DATA_DIR / "voices" / "drama"))).resolve()
 DRAMA_IDLE = float(os.getenv("DRAMA_IDLE", "300"))
 # "worker" = local MLX process on Apple Silicon; "remote" = SGLang/vLLM server
 # (Colab, RunPod, ...). Remote keeps this sidecar free of any Holos/Drama deps.

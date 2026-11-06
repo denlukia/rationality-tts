@@ -10,7 +10,7 @@ const execFileAsync = promisify(execFile);
 
 export const AUTH_REQUIRED = process.env.SESSION_REQUIRE_AUTH === '1';
 export const BUDGET_SEC = Number(process.env.SESSION_BUDGET_SEC ?? 0) || 0;
-const AUTOSAVE_SEC = Number(process.env.AUTOSAVE_SEC ?? 300) || 0;
+const AUTOSAVE_SEC = Number(process.env.AUTOSAVE_SEC ?? 0) || 0;
 const STARTED_AT = Date.now();
 
 const DEFAULT_REPO = process.env.GITHUB_REPO ?? 'denlukia/rationality-tts-data';

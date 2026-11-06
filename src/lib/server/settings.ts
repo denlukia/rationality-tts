@@ -6,7 +6,7 @@ export interface Replacement {
 	to: string;
 }
 
-export const SETTINGS_PATH = path.resolve(process.env.SETTINGS_FILE ?? 'data/settings.json');
+export const SETTINGS_PATH = path.resolve(process.env.SETTINGS_FILE ?? path.join(process.env.DATA_DIR ?? 'data', 'settings.json'));
 
 export interface AppSettings {
 	engine: Engine;

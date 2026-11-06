@@ -175,7 +175,7 @@ data repo): paste it on the first screen and the server clones the data repo int
 | `SESSION_REQUIRE_AUTH` | `0` | set to `1` to require a GitHub token to use the app |
 | `SESSION_BUDGET_SEC` | `0` | runtime budget shown by the timer (0 = hidden) |
 | `GITHUB_REPO` | `denlukia/rationality-tts-data` | data repo cloned by the session screen |
-| `AUTOSAVE_SEC` | `300` | auto-commit interval (0 = off) |
+| `AUTOSAVE_SEC` | `0` | auto-commit interval (0 = off) |
 | `GITHUB_TOKEN` | (none) | optional token supplied at boot instead of the UI |
 | `DEFAULT_ENGINE` | (none) | force `holos` or `drama` (also `TTS_ENGINE`) |
 
