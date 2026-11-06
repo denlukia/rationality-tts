@@ -1,9 +1,16 @@
 <script lang="ts">
-	import '@fontsource/inter/500.css';
-	import '@fontsource/inter/700.css';
+	import '@fontsource/geologica/500.css';
+	import '@fontsource/geologica/700.css';
 	import '../style.css';
+	import LoginScreen from '#lib/components/LoginScreen.svelte';
+	import SessionWidget from '#lib/components/SessionWidget.svelte';
 
-	let { children } = $props();
+	let { data, children } = $props();
 </script>
 
-{@render children()}
+{#if data.auth.required && !data.auth.authed}
+	<LoginScreen />
+{:else}
+	{@render children()}
+	<SessionWidget />
+{/if}

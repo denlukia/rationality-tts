@@ -1,9 +1,19 @@
+.env
+.env.*
+!.env.example
 node_modules
 .svelte-kit
 build
 .venv
+.venv-*/
 __pycache__
 .DS_Store
 *.log
 data/db.json.tmp
 data/audio/*.tmp
+# runtime data lives in the separate data repo
+/data/
+# models are downloaded locally, never committed
+/models/
+# voice encoder source tree is a local dependency clone
+/tts/HolosTTS/

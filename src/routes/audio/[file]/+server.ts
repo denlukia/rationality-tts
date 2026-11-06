@@ -11,7 +11,7 @@ const TYPES: Record<string, string> = {
 
 export const GET: RequestHandler = ({ params }) => {
 	const file = params.file;
-	if (!/^[a-f0-9]{16,64}\.(opus|wav|flac)$/.test(file)) throw error(404, 'not found');
+	if (!/^[a-zA-Z0-9_-]+\.(opus|wav|flac)$/.test(file)) throw error(404, 'not found');
 	const full = audioDiskPath(file);
 	if (!fs.existsSync(full)) throw error(404, 'not found');
 	const ext = file.split('.').pop() ?? '';

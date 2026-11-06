@@ -25,6 +25,7 @@
 
 	let draft = $state('');
 	let saving = $state(false);
+	let textarea: HTMLTextAreaElement | undefined = $state();
 	let selection = $derived(`${pi}:${si}`);
 
 	$effect(() => {
@@ -36,6 +37,20 @@
 		sentence.status === 'done' ? 'озвучено' : sentence.status === 'update' ? 'потрібно переозвучити' : 'не озвучено'
 	);
 	const dirty = $derived(draft.trim() !== sentence.patch);
+
+	function insertStress() {
+		if (!textarea) return;
+		const start = textarea.selectionStart;
+		const end = textarea.selectionEnd;
+		if (start !== end || start === 0) return;
+		const next = draft.slice(0, start) + '\u0301' + draft.slice(start);
+		draft = next;
+		requestAnimationFrame(() => {
+			if (!textarea) return;
+			textarea.focus();
+			textarea.selectionStart = textarea.selectionEnd = start + 1;
+		});
+	}
 
 	async function save() {
 		if (!dirty || saving) return;
@@ -60,8 +75,19 @@
 	</div>
 
 	<div class="block">
+		<div class="label">після автозамін</div>
+		<p class="original">{sentence.replaced}</p>
+	</div>
+
+	<div class="block">
+		<div class="label">після вербалізації</div>
+		<p class="original">{sentence.verbalized}</p>
+	</div>
+
+	<div class="block">
 		<div class="label">патч</div>
 		<textarea
+			bind:this={textarea}
 			bind:value={draft}
 			placeholder="без змін"
 			spellcheck="false"
@@ -69,6 +95,9 @@
 				if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') save();
 			}}
 		></textarea>
+		<div class="stress-row">
+			<button class="black small-stress" onclick={insertStress} title="наголос на літеру перед курсором">додати наголос</button>
+		</div>
 	</div>
 
 	<div class="actions">
@@ -143,6 +172,17 @@
 		flex-wrap: wrap;
 		gap: 8px;
 		margin-bottom: 28px;
+	}
+	.stress-row {
+		margin: 0 0 24px;
+	}
+	.small-stress {
+		background: var(--ink);
+		color: #fff;
+		border-radius: 3px;
+		padding: 4px 10px;
+		font-size: 18px;
+		line-height: 1;
 	}
 	.black {
 		background: var(--ink);

@@ -90,6 +90,28 @@ The first synthesis downloads the model:
 Engine selection is automatic at runtime: Apple Silicon with `holos-tts-mlx` installed uses
 MLX, everything else uses ONNX. Force one with `HOLOS_ENGINE=mlx` or `HOLOS_ENGINE=onnx`.
 
+### Optional: Fish Audio Drama 3
+
+The settings panel can switch between HolosTTS and **Fish Audio Drama 3** (`engine: "drama"`).
+Drama 3 is a 35B MoE voice-cloning model: it needs a reference clip and its transcript, runs
+at roughly real time on an M1 Pro, and takes ~23 GB of RAM. The sidecar starts it only when
+needed and stops it after 5 idle minutes.
+
+Apple Silicon only, and use the **3-bit** checkpoint — the 4-bit one peaks at ~26 GB and does
+not fit a 32 GB machine:
+
+```bash
+hf download mlx-community/fish-audio-drama-3-3bit --local-dir models/fish-audio-drama-3-3bit
+
+uv venv .venv-drama --python 3.11
+uv pip install --python .venv-drama/bin/python "mlx-audio>=0.6.2" soundfile
+```
+
+Then in **налаштування → модель** pick *Fish Drama 3*, upload or record a reference clip,
+and type exactly what is said in it. Without a reference the model picks a voice on its own,
+which is not stable across sentences. Drama ignores IPA phonemes (it reads raw text) and
+applies the speed setting afterwards with `ffmpeg atempo`.
+
 ## Using it
 
 1. Expand a book and a chapter; pick an essay.
@@ -97,20 +119,19 @@ MLX, everything else uses ONNX. Force one with `HOLOS_ENGINE=mlx` or `HOLOS_ENGI
    - **зберегти** stores the patch in `data/db.json`.
    - **TTS** synthesizes the patched (or original) sentence.
    - **прослухати** plays just that sentence.
-3. Click the thin space between sentences (or between paragraphs) to place the playhead
-   *between* items; click a sentence to place it *on* that sentence. The current position is
-   shown above the bottom controls.
-4. The eight bottom buttons act from the playhead:
-   - play sentence before / one after / to the end of the paragraph / everything after;
-   - the same four actions for TTS.
-5. Sentence styling is the only status UI:
+3. Click a sentence to place the playhead on it. The bottom controls act from there:
+   - play / synthesize the previous, current or next sentence, the rest of the paragraph, or
+     everything after the playhead.
+4. Sentence styling is the only status UI:
+   - black — no audio yet;
    - green — TTSed and up to date;
-   - yellow — audio exists but the patch changed, or the paragraph needs review;
-   - black — default;
-   - white on black — currently playing;
-   - bold — selected in the right panel.
-6. Click any pie in the left tree to see the exact added/removed paragraphs. **позначити
+   - yellow — audio exists but the patch or settings changed;
+   - reversed (status colour as background) — selected in the right panel;
+   - 1.5px rounded red outline — currently playing.
+5. Click any pie in the left tree to see the exact added/removed paragraphs. **позначити
    переглянутим** clears the yellow “needs update” state for that book, chapter or essay.
+   **не потребує TTS / потребує TTS** marks or unmarks a book, chapter or essay as not
+   requiring narration (excluded from the pies).
 
 ## Updating the books
 
@@ -149,7 +170,11 @@ on very large libraries consider Git LFS. Without ffmpeg the sidecar writes `.wa
 | `HOLOS_ONNX_MODEL` | `patriotyk/HolosTTS/onnx-int8` | ONNX model repo |
 | `HOLOS_VOICE` | `Speaker_84` | preset voice name |
 | `HOLOS_BITRATE` | `24k` | Opus bitrate |
-| `HOLOS_SPEED` | `1.0` | speaking speed |
+| `HOLOS_SPEED` | `1.0` | default speaking speed |
+| `TTS_ENGINE` | `holos` | default engine when the request omits one |
+| `DRAMA_MODEL` | `models/fish-audio-drama-3-3bit` | local Drama 3 MLX checkpoint |
+| `DRAMA_PYTHON` | `.venv-drama/bin/python` | interpreter with `mlx-audio` installed |
+| `DRAMA_IDLE` | `300` | seconds before the idle Drama worker is stopped |
 | `PYTHON` | `python` | interpreter used by `run.sh` |
 | `AUDIO_DIR` | `data/audio` | where the sidecar writes clips |
 
@@ -171,7 +196,8 @@ src/lib/server/content.ts # Markdown scan, sentence split, hashing
 src/lib/server/library.ts # status aggregation, change detection
 src/lib/server/db.ts      # JSON DB
 src/routes/api/           # essay, patch, tts, ack
-tts/server.py             # HolosTTS sidecar (thin)
+tts/server.py             # engine router sidecar (HolosTTS + Drama 3 worker)
+tts/drama_worker.py       # Drama 3 model process (own venv, JSON-lines protocol)
 ```
 
 This is intentionally smaller than the reference HolosTTS playground: no voices UI, no

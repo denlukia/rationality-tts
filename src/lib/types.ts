@@ -11,6 +11,8 @@ export interface SentenceView {
 	text: string;
 	status: SentenceStatus;
 	patch: string;
+	replaced: string;
+	verbalized: string;
 	audio: AudioRef | null;
 }
 
@@ -43,6 +45,7 @@ export interface EssayNode {
 	title: string;
 	counts: Counts;
 	changes: EssayChanges;
+	required: boolean;
 }
 
 export interface ChapterNode {
@@ -79,6 +82,8 @@ export interface EssayView {
 export interface SentenceState {
 	status: SentenceStatus;
 	patch: string;
+	replaced: string;
+	verbalized: string;
 	audio: AudioRef | null;
 }
 
@@ -86,6 +91,7 @@ export interface DialogEssay {
 	title: string;
 	added: ChangeItem[];
 	removed: ChangeItem[];
+	required: boolean;
 }
 
 export interface DialogData {

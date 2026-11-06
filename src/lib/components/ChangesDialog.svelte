@@ -1,10 +1,12 @@
 <script lang="ts">
 	import type { DialogData } from '#lib/types';
 
-	let { data, onclose, onack }: { data: DialogData; onclose: () => void; onack: (paths: string[]) => void } = $props();
+	let { data, onclose, onack, onrequired }: { data: DialogData; onclose: () => void; onack: (paths: string[]) => void; onrequired: (paths: string[], value: boolean) => void } = $props();
 
 	const changes = $derived(data.essays.filter((e) => e.added.length || e.removed.length));
 	const totalChanges = $derived(changes.reduce((n, e) => n + e.added.length + e.removed.length, 0));
+	const allRequired = $derived(data.essays.every((e) => e.required));
+	const allNotRequired = $derived(data.essays.every((e) => !e.required));
 </script>
 
 <svelte:window
@@ -61,6 +63,10 @@
 			</div>
 			<button class="ack" onclick={() => onack(data.paths)}>позначити переглянутим</button>
 		{/if}
+		<div class="req">
+			<button class="small" onclick={() => onrequired(data.paths, false)} disabled={allNotRequired}>не потребує TTS</button>
+			<button class="small" onclick={() => onrequired(data.paths, true)} disabled={allRequired}>потребує TTS</button>
+		</div>
 	</div>
 </div>
 
@@ -68,7 +74,7 @@
 	.overlay {
 		position: fixed;
 		inset: 0;
-		background: rgba(255, 255, 255, 0.9);
+		background: rgba(0, 0, 0, 0.5);
 		z-index: 100;
 		display: grid;
 		place-items: center;
@@ -92,7 +98,10 @@
 		margin-bottom: 6px;
 	}
 	.close {
-		color: var(--dim);
+		background: var(--ink);
+		color: #fff;
+		border-radius: 3px;
+		padding: 6px 10px;
 	}
 	.counts {
 		display: flex;
@@ -134,5 +143,19 @@
 		color: #fff;
 		border-radius: 3px;
 		padding: 8px 12px;
+	}
+	.req {
+		display: flex;
+		gap: 8px;
+		margin-top: 16px;
+	}
+	.small {
+		background: var(--ink);
+		color: #fff;
+		border-radius: 3px;
+		padding: 7px 11px;
+	}
+	.small:disabled {
+		opacity: 0.3;
 	}
 </style>

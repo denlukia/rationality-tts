@@ -11,17 +11,50 @@ import type {
 	SentenceState,
 	SentenceStatus
 } from '#lib/types';
-import { currentHashes, currentTexts, scanBooks, findEssay, type ParsedEssay } from './content';
-import { audioFile, audioPath, audioUrl, ensureEssay, fileExists, readDb, writeDb, type AudioMeta, type EssayRec, type Db } from './db';
+import {
+	currentHashes,
+	currentTexts,
+	scanBooks,
+	findEssay,
+	type ParsedEssay,
+	type ParsedParagraph,
+	type ParsedSentence
+} from './content';
+import {
+	audioFile,
+	audioPath,
+	audioUrl,
+	fileExists,
+	readEssayRec,
+	writeEssayRec,
+	type AudioMeta,
+	type EssayRec
+} from './db';
 import { hashText, verbalizeNumbers } from './text';
+import { applyReplacements, readSettings } from './settings';
 
 export function effectiveText(original: string, patch?: string): string {
 	const p = (patch ?? '').trim();
 	return p || original;
 }
 
-export function audioKey(text: string): string {
-	return hashText(verbalizeNumbers(text), 24);
+export function verbalized(original: string): string {
+	const s = readSettings();
+	return verbalizeNumbers(applyReplacements(original, s.replacements));
+}
+
+export function ttsText(original: string, patch?: string): string {
+	const p = (patch ?? '').trim();
+	return p || verbalized(original);
+}
+
+export function audioKey(original: string, patch?: string): string {
+	const s = readSettings();
+	const final = ttsText(original, patch);
+	// Keep the Holos key byte-identical to the pre-engine formula so existing
+	// audio is not invalidated; Drama gets its own namespace and voice.
+	const voice = s.engine === 'drama' ? `drama:${s.dramaVoice}` : s.voice;
+	return hashText(`${final}\n${voice}\n${s.speed}\n${s.sentenceGap}\n${s.paragraphGap}\n${JSON.stringify(s.replacements)}`, 24);
 }
 
 function emptyCounts(): Counts {
@@ -38,7 +71,7 @@ function sentenceStatus(rec: EssayRec, phash: string, text: string): SentenceSta
 	const srec = rec.paragraphs[phash]?.sentences?.[hashText(text)];
 	const audio = srec?.audio;
 	if (!audio) return 'empty';
-	if (audio.key !== audioKey(effectiveText(text, srec?.patch))) return 'update';
+	if (audio.key !== audioKey(text, srec?.patch)) return 'update';
 	if (!fileExists(audio.file)) return 'empty';
 	return 'done';
 }
@@ -47,7 +80,56 @@ function snippet(text: string): ChangeItem {
 	return { hash: hashText(text), text: text.length > 240 ? text.slice(0, 240) + '…' : text };
 }
 
+/**
+ * The baseline for an essay that has never been edited: every paragraph that
+ * currently exists is already "known", so nothing is flagged as newly added.
+ * It is only written to disk once the essay actually gains a patch or audio.
+ */
+function baselineRec(essay: ParsedEssay): EssayRec {
+	return {
+		version: 1,
+		path: essay.path,
+		known: currentHashes(essay),
+		knownTexts: currentTexts(essay),
+		paragraphs: {},
+		updatedAt: new Date().toISOString(),
+		required: true
+	};
+}
+
+function recFor(essay: ParsedEssay): EssayRec {
+	return readEssayRec(essay.path) ?? baselineRec(essay);
+}
+
+interface FoundSentence {
+	essay: ParsedEssay;
+	paragraph: ParsedParagraph;
+	sentence: ParsedSentence;
+}
+
+function stateFrom(found: FoundSentence, rec: EssayRec): SentenceState {
+	const srec = rec.paragraphs[found.paragraph.hash]?.sentences?.[found.sentence.hash];
+	const status = new Set(rec.known).has(found.paragraph.hash)
+		? sentenceStatus(rec, found.paragraph.hash, found.sentence.text)
+		: 'update';
+	const patch = srec?.patch ?? '';
+	const audio = srec?.audio;
+	return {
+		status,
+		patch,
+		replaced: applyReplacements(found.sentence.text, readSettings().replacements),
+		verbalized: verbalized(found.sentence.text),
+		audio:
+			audio && fileExists(audio.file)
+				? { url: audioUrl(audio.file), file: audio.file, duration: audio.duration }
+				: null
+	};
+}
+
 export function essayState(essay: ParsedEssay, rec: EssayRec): { counts: Counts; changes: EssayChanges } {
+	if (rec.required === false) {
+		return { counts: emptyCounts(), changes: { added: [], removed: [] } };
+	}
 	const counts = emptyCounts();
 	const changes: EssayChanges = { added: [], removed: [] };
 	const knownSet = new Set(rec.known);
@@ -75,10 +157,6 @@ export function essayState(essay: ParsedEssay, rec: EssayRec): { counts: Counts;
 	return { counts, changes };
 }
 
-function initEssay(db: Db, essay: ParsedEssay): EssayRec {
-	return ensureEssay(db, essay.path, currentHashes(essay), currentTexts(essay));
-}
-
 function essayParagraphView(essay: ParsedEssay, rec: EssayRec): ParagraphView[] {
 	return essay.paragraphs.map((p) => {
 		const isNew = !new Set(rec.known).has(p.hash);
@@ -89,18 +167,17 @@ function essayParagraphView(essay: ParsedEssay, rec: EssayRec): ParagraphView[] 
 			sentences: p.sentences.map((s) => {
 				const srec = rec.paragraphs[p.hash]?.sentences?.[s.hash];
 				const patch = srec?.patch ?? '';
-				const effective = effectiveText(s.text, patch);
 				const audio = srec?.audio;
-				const status: SentenceStatus = isNew
-					? 'update'
-					: sentenceStatus(rec, p.hash, s.text);
-				const fresh = status === 'done' && audio && fileExists(audio.file);
+				const status: SentenceStatus = isNew ? 'update' : sentenceStatus(rec, p.hash, s.text);
+				const available = !!audio && fileExists(audio.file);
 				return {
 					hash: s.hash,
 					text: s.text,
 					status,
 					patch,
-					audio: fresh
+					replaced: applyReplacements(s.text, readSettings().replacements),
+					verbalized: verbalized(s.text),
+					audio: available
 						? { url: audioUrl(audio.file), file: audio.file, duration: audio.duration }
 						: null
 				};
@@ -109,10 +186,17 @@ function essayParagraphView(essay: ParsedEssay, rec: EssayRec): ParagraphView[] 
 	});
 }
 
+export function emptyLibrary(): Library {
+	return {
+		root: 'content/books',
+		books: [],
+		totals: emptyCounts(),
+		generatedAt: new Date().toISOString()
+	};
+}
+
 export function getLibrary(): Library {
-	const db = readDb();
 	const scan = scanBooks();
-	let dirty = false;
 	const books: BookNode[] = [];
 	const totals = emptyCounts();
 
@@ -125,16 +209,15 @@ export function getLibrary(): Library {
 			for (const meta of chapter.essays) {
 				const parsed = scan.essays.get(meta.path);
 				if (!parsed) continue;
-				const rec = db.essays[meta.path];
-				if (!rec) dirty = true;
-				const essayRec = initEssay(db, parsed);
+				const essayRec = recFor(parsed);
 				const { counts, changes } = essayState(parsed, essayRec);
 				essays.push({
 					type: 'essay',
 					path: meta.path,
 					title: meta.title,
 					counts,
-					changes
+					changes,
+					required: essayRec.required !== false
 				});
 				addCounts(chapterCounts, counts);
 			}
@@ -157,7 +240,6 @@ export function getLibrary(): Library {
 		addCounts(totals, bookCounts);
 	}
 
-	if (dirty) writeDb(db);
 	return {
 		root: 'content/books',
 		books,
@@ -169,11 +251,7 @@ export function getLibrary(): Library {
 export function getEssayView(relPath: string): EssayView | null {
 	const essay = findEssay(relPath);
 	if (!essay) return null;
-	const db = readDb();
-	const rec = db.essays[essay.path];
-	const existed = !!rec;
-	const essayRec = initEssay(db, essay);
-	if (!existed) writeDb(db);
+	const essayRec = recFor(essay);
 	const { counts, changes } = essayState(essay, essayRec);
 	return {
 		path: essay.path,
@@ -184,7 +262,7 @@ export function getEssayView(relPath: string): EssayView | null {
 	};
 }
 
-export function getSentence(relPath: string, pi: number, si: number) {
+export function getSentence(relPath: string, pi: number, si: number): FoundSentence | null {
 	const essay = findEssay(relPath);
 	if (!essay) return null;
 	const paragraph = essay.paragraphs[pi];
@@ -196,25 +274,13 @@ export function getSentence(relPath: string, pi: number, si: number) {
 export function getSentenceState(relPath: string, pi: number, si: number): SentenceState | null {
 	const found = getSentence(relPath, pi, si);
 	if (!found) return null;
-	const db = readDb();
-	const rec = initEssay(db, found.essay);
-	const srec = rec.paragraphs[found.paragraph.hash]?.sentences?.[found.sentence.hash];
-	const status = new Set(rec.known).has(found.paragraph.hash)
-		? sentenceStatus(rec, found.paragraph.hash, found.sentence.text)
-		: 'update';
-	const audio = srec?.audio;
-	return {
-		status,
-		patch: srec?.patch ?? '',
-		audio: status === 'done' && audio ? { url: audioUrl(audio.file), file: audio.file, duration: audio.duration } : null
-	};
+	return stateFrom(found, recFor(found.essay));
 }
 
 export function savePatch(relPath: string, pi: number, si: number, patch: string): SentenceState | null {
 	const found = getSentence(relPath, pi, si);
 	if (!found) return null;
-	const db = readDb();
-	const rec = initEssay(db, found.essay);
+	const rec = recFor(found.essay);
 	const phash = found.paragraph.hash;
 	const shash = found.sentence.hash;
 	rec.paragraphs[phash] ??= { text: found.paragraph.text, sentences: {} };
@@ -223,27 +289,26 @@ export function savePatch(relPath: string, pi: number, si: number, patch: string
 	if (clean) rec.paragraphs[phash].sentences[shash].patch = clean;
 	else delete rec.paragraphs[phash].sentences[shash].patch;
 	rec.updatedAt = new Date().toISOString();
-	writeDb(db);
-	return getSentenceState(relPath, pi, si);
+	writeEssayRec(found.essay.path, rec);
+	return stateFrom(found, rec);
 }
 
 export function saveAudio(relPath: string, pi: number, si: number, meta: AudioMeta): SentenceState | null {
 	const found = getSentence(relPath, pi, si);
 	if (!found) return null;
-	const db = readDb();
-	const rec = initEssay(db, found.essay);
+	const rec = recFor(found.essay);
 	const phash = found.paragraph.hash;
 	const shash = found.sentence.hash;
 	rec.paragraphs[phash] ??= { text: found.paragraph.text, sentences: {} };
 	rec.paragraphs[phash].sentences[shash] ??= {};
 	rec.paragraphs[phash].sentences[shash].audio = meta;
-	ackParagraph(db, rec, found.essay, pi);
+	ackParagraph(rec, found.essay, pi);
 	rec.updatedAt = new Date().toISOString();
-	writeDb(db);
-	return getSentenceState(relPath, pi, si);
+	writeEssayRec(found.essay.path, rec);
+	return stateFrom(found, rec);
 }
 
-function ackParagraph(db: Db, rec: EssayRec, essay: ParsedEssay, pi: number): void {
+function ackParagraph(rec: EssayRec, essay: ParsedEssay, pi: number): void {
 	const paragraph = essay.paragraphs[pi];
 	if (!paragraph) return;
 	const hashes = currentHashes(essay);
@@ -260,20 +325,32 @@ function ackParagraph(db: Db, rec: EssayRec, essay: ParsedEssay, pi: number): vo
 	rec.knownTexts[paragraph.hash] = paragraph.text;
 }
 
-export function ackPaths(paths: string[]): number {
-	const db = readDb();
+export function setRequired(paths: string[], value: boolean): number {
 	let changed = 0;
 	for (const rel of paths) {
 		const essay = findEssay(rel);
 		if (!essay) continue;
-		const rec = initEssay(db, essay);
-		const hashes = currentHashes(essay);
-		rec.known = [...hashes];
-		rec.knownTexts = { ...currentTexts(essay) };
+		const rec = recFor(essay);
+		rec.required = value;
 		rec.updatedAt = new Date().toISOString();
+		writeEssayRec(essay.path, rec);
 		changed++;
 	}
-	if (changed) writeDb(db);
+	return changed;
+}
+
+export function ackPaths(paths: string[]): number {
+	let changed = 0;
+	for (const rel of paths) {
+		const essay = findEssay(rel);
+		if (!essay) continue;
+		const rec = recFor(essay);
+		rec.known = [...currentHashes(essay)];
+		rec.knownTexts = { ...currentTexts(essay) };
+		rec.updatedAt = new Date().toISOString();
+		writeEssayRec(essay.path, rec);
+		changed++;
+	}
 	return changed;
 }
 
@@ -290,5 +367,5 @@ export function hasAudioFile(key: string): boolean {
 }
 
 export function resetCacheForTests(): void {
-	// intentionally empty: cache is keyed by mtime
+	// intentionally empty: per-essay cache is keyed by mtime
 }

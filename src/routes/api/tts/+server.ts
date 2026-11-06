@@ -1,8 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { audioKey, effectiveText, getSentence, getSentenceState, saveAudio } from '#lib/server/library';
+import { audioKey, effectiveText, getSentence, getSentenceState, saveAudio, ttsText } from '#lib/server/library';
 import { audioFile } from '#lib/server/db';
-import { verbalizeNumbers } from '#lib/server/text';
+import { readSettings } from '#lib/server/settings';
 
 const TTS_URL = process.env.TTS_URL ?? 'http://127.0.0.1:8767';
 
@@ -19,19 +19,28 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({ ...current, cached: true });
 	}
 
+	const settings = readSettings();
 	const state = getSentenceState(body.path, body.pi, body.si);
 	const patch = state?.patch ?? '';
-	const text = effectiveText(found.sentence.text, patch);
-	const spoken = verbalizeNumbers(text);
-	const key = audioKey(text);
+	const text = found.sentence.text;
+	const finalText = ttsText(text, patch);
+	const key = audioKey(text, patch);
 	const expected = audioFile(key);
+	const voice = settings.engine === 'drama' ? settings.dramaVoice : settings.voice;
 
 	let response: Response;
 	try {
 		response = await fetch(`${TTS_URL}/synth`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ text: spoken, key, voice: process.env.HOLOS_VOICE ?? 'Speaker_84' }),
+			body: JSON.stringify({
+				text: finalText,
+				key,
+				voice,
+				engine: settings.engine,
+				speed: settings.speed,
+				gap_sentence: settings.sentenceGap
+			}),
 			signal: AbortSignal.timeout(180_000)
 		});
 	} catch {
@@ -61,7 +70,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		key,
 		file,
 		duration,
-		text,
+		text: finalText,
 		at: Date.now()
 	});
 	if (!saved) return json({ error: 'could not save audio' }, { status: 500 });

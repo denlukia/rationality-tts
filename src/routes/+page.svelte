@@ -1,21 +1,37 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
-	import { onDestroy } from 'svelte';
+	import { goto, invalidateAll } from '$app/navigation';
+	import { onMount, onDestroy } from 'svelte';
 	import Sidebar from '#lib/components/Sidebar.svelte';
 	import SentenceSidebar from '#lib/components/SentenceSidebar.svelte';
+	import SettingsModal from '#lib/components/SettingsModal.svelte';
 	import type { EssayView, Library, SentenceState } from '#lib/types';
 
 	let { data } = $props();
 	let library = $derived(data.library as Library);
+	let settings = $derived(
+		data.settings as {
+			engine: 'holos' | 'drama';
+			voice: string;
+			dramaVoice: string;
+			speed: number;
+			sentenceGap: number;
+			paragraphGap: number;
+			replacements: { from: string; to: string }[];
+		}
+	);
 
 	let essay = $state<EssayView | null>(null);
 	let selectedPath = $state<string | null>(null);
 	let loading = $state(false);
 	let selected = $state<{ pi: number; si: number } | null>(null);
-	let playhead = $state<{ idx: number; mode: 'on' | 'between' } | null>(null);
+	let playhead = $state<number>(0);
 	let playingKey = $state<string | null>(null);
+	let generatingKey = $state<string | null>(null);
 	let ttsState = $state<{ active: boolean; done: number; total: number } | null>(null);
 	let toast = $state('');
+	let settingsOpen = $state(false);
+	let playAmount = $state('after');
+	let ttsAmount = $state('after');
 	let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
 	interface FlatSentence {
@@ -44,18 +60,6 @@
 
 	let ttsBusy = $derived(!!ttsState?.active);
 
-	let playheadLabel = $derived.by(() => {
-		if (!flat.length) return 'початок';
-		if (!playhead) return 'початок';
-		if (playhead.mode === 'on') {
-			const f = flat[playhead.idx];
-			return f ? `на реченні ${playhead.idx + 1}` : 'початок';
-		}
-		if (playhead.idx <= 0) return 'перед першим реченням';
-		if (playhead.idx >= flat.length) return 'після останнього речення';
-		return `між ${playhead.idx} і ${playhead.idx + 1}`;
-	});
-
 	let currentAudio: HTMLAudioElement | null = null;
 	let playToken = 0;
 
@@ -63,6 +67,17 @@
 		stopPlayback();
 		if (toastTimer) clearTimeout(toastTimer);
 	});
+
+	onMount(() => {
+		const fromUrl = new URL(window.location.href).searchParams.get('essay');
+		if (fromUrl && fromUrl !== selectedPath) openEssay(fromUrl);
+		const pa = localStorage.getItem('playAmount');
+		const ta = localStorage.getItem('ttsAmount');
+		if (pa) playAmount = pa;
+		if (ta) ttsAmount = ta;
+	});
+	$effect(() => { localStorage.setItem('playAmount', playAmount); });
+	$effect(() => { localStorage.setItem('ttsAmount', ttsAmount); });
 
 	function showToast(message: string) {
 		toast = message;
@@ -78,7 +93,7 @@
 		stopPlayback();
 		selectedPath = path;
 		selected = null;
-		playhead = null;
+		playhead = 0;
 		loading = true;
 		try {
 			const r = await fetch('/api/essay?path=' + encodeURIComponent(path));
@@ -87,7 +102,10 @@
 				return;
 			}
 			essay = (await r.json()) as EssayView;
-			playhead = { idx: 0, mode: 'between' };
+			playhead = 0;
+			const url = new URL(window.location.href);
+			url.searchParams.set('essay', path);
+			goto(url.pathname + url.search, { replace: true });
 			window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
 		} catch {
 			showToast('Не вдалося відкрити есей');
@@ -98,11 +116,7 @@
 
 	function selectSentence(pi: number, si: number) {
 		selected = { pi, si };
-		playhead = { idx: idxOf(pi, si), mode: 'on' };
-	}
-
-	function setBetween(idx: number) {
-		playhead = { idx, mode: 'between' };
+		playhead = idxOf(pi, si);
 	}
 
 	function stopPlayback() {
@@ -123,9 +137,17 @@
 		stopPlayback();
 		const token = ++playToken;
 		void (async () => {
+			let prevPi: number | null = null;
 			for (const i of playable) {
 				if (token !== playToken) return;
 				const f = flat[i];
+				generatingKey = `${f.pi}:${f.si}`;
+				if (prevPi !== null) {
+					const gap = f.pi !== prevPi ? settings.paragraphGap : settings.sentenceGap;
+					await new Promise((r) => setTimeout(r, gap * 1000));
+					if (token !== playToken) return;
+				}
+				prevPi = f.pi;
 				playingKey = `${f.pi}:${f.si}`;
 				document.getElementById(`s-${f.pi}-${f.si}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
 				await new Promise<void>((resolve) => {
@@ -143,37 +165,40 @@
 		})();
 	}
 
-	function range(action: 'prev' | 'next' | 'paragraph' | 'after'): number[] {
+	function range(action: string): number[] {
 		const n = flat.length;
 		if (!n) return [];
-		const ph = playhead ?? { idx: 0, mode: 'between' as const };
+		const idx = Math.min(Math.max(playhead, 0), n - 1);
 		if (action === 'prev') {
-			const i = ph.mode === 'on' ? ph.idx - 1 : ph.idx - 1;
+			const i = playhead - 1;
 			return i >= 0 && i < n ? [i] : [];
+		}
+		if (action === 'current') {
+			return [playhead];
 		}
 		if (action === 'next') {
-			const i = ph.mode === 'on' ? ph.idx + 1 : ph.idx;
+			const i = playhead + 1;
 			return i >= 0 && i < n ? [i] : [];
 		}
-		if (ph.mode === 'between' && ph.idx >= n) return [];
-		const base = ph.mode === 'on' ? ph.idx : ph.idx;
 		if (action === 'paragraph') {
-			const target = flat[base];
+			const target = flat[idx];
 			if (!target) return [];
-			let end = base;
+			let end = idx;
 			while (end < n - 1 && flat[end + 1].pi === target.pi) end++;
-			return Array.from({ length: end - base + 1 }, (_, k) => base + k);
+			return Array.from({ length: end - idx + 1 }, (_, k) => idx + k);
 		}
-		return Array.from({ length: n - base }, (_, k) => base + k);
+		return Array.from({ length: n - idx }, (_, k) => idx + k);
 	}
 
-	function playAction(action: 'prev' | 'next' | 'paragraph' | 'after') {
-		playIndexes(range(action));
+	function playAction(amount: string) {
+		playIndexes(range(amount as 'prev' | 'next' | 'paragraph' | 'after'));
 	}
 
-	async function ttsIndexes(indexes: number[]) {
+	async function ttsIndexes(indexes: number[], force = false) {
 		if (!essay || ttsBusy) return;
-		const todo = indexes.filter((i) => flat[i] && flat[i].status !== 'done');
+		const todo = force
+			? indexes.filter((i) => flat[i])
+			: indexes.filter((i) => flat[i] && flat[i].status !== 'done');
 		if (!todo.length) {
 			showToast('Ці речення вже озвучені');
 			return;
@@ -188,10 +213,11 @@
 				const r = await fetch('/api/tts', {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify({ path: essay.path, pi: f.pi, si: f.si })
+					body: JSON.stringify({ path: essay.path, pi: f.pi, si: f.si, force })
 				});
 				if (!r.ok) {
 					const err = (await r.json().catch(() => ({}))) as { error?: string };
+					generatingKey = null;
 					showToast(err.error ?? 'Помилка TTS');
 					break;
 				}
@@ -207,13 +233,24 @@
 		} catch {
 			showToast('Помилка TTS');
 		} finally {
+			generatingKey = null;
 			ttsState = null;
 		}
 		if (completed) showToast(`озвучено ${completed} ${completed === 1 ? 'речення' : 'речень'}`);
 	}
 
-	function ttsAction(action: 'prev' | 'next' | 'paragraph' | 'after') {
-		void ttsIndexes(range(action));
+	function ttsAction(amount: string, force = false) {
+		void ttsIndexes(range(amount as 'prev' | 'next' | 'paragraph' | 'after'), force);
+	}
+
+	async function reloadEssay() {
+		if (!selectedPath) return;
+		try {
+			const r = await fetch('/api/essay?path=' + encodeURIComponent(selectedPath));
+			if (r.ok) essay = (await r.json()) as EssayView;
+		} catch {
+			/* ignore */
+		}
 	}
 
 	async function onsave(patch: string) {
@@ -245,17 +282,12 @@
 		playIndexes([idxOf(selected.pi, selected.si)]);
 	}
 
-	const PLAY_ACTIONS = [
-		{ key: 'prev' as const, label: '▶ попереднє' },
-		{ key: 'next' as const, label: '▶ наступне' },
-		{ key: 'paragraph' as const, label: '▶ до кінця абзацу' },
-		{ key: 'after' as const, label: '▶ усе далі' }
-	];
-	const TTS_ACTIONS = [
-		{ key: 'prev' as const, label: 'TTS попереднє' },
-		{ key: 'next' as const, label: 'TTS наступне' },
-		{ key: 'paragraph' as const, label: 'TTS до кінця абзацу' },
-		{ key: 'after' as const, label: 'TTS усе далі' }
+	const AMOUNTS = [
+		{ value: 'prev', label: 'попереднє' },
+		{ value: 'current', label: 'поточне' },
+		{ value: 'next', label: 'наступне' },
+		{ value: 'paragraph', label: 'до кінця абзацу' },
+		{ value: 'after', label: 'усе далі' }
 	];
 </script>
 
@@ -267,7 +299,7 @@
 
 <Sidebar {library} {selectedPath} onselect={openEssay} />
 
-<main class:shift={!!selectedSentence}>
+<main>
 	{#if loading}
 		<p class="dim">завантаження…</p>
 	{:else if essay}
@@ -284,9 +316,6 @@
 				<div class="p {p.kind}">
 					{#each p.sentences as s, si}
 						{@const idx = idxOf(pi, si)}
-						{#if playhead?.mode === 'on' && playhead.idx === idx}
-							<span class="caret" aria-hidden="true"></span>
-						{/if}
 						<span
 							id={`s-${pi}-${si}`}
 							class="s {s.status}"
@@ -300,27 +329,12 @@
 									e.preventDefault();
 									selectSentence(pi, si);
 								}
-							}}>{s.text}</span
+							}}>{#if s.patch}<sup class="patch-mark">P</sup>{/if}{s.text}</span
 						>
-						{#if si < p.sentences.length - 1}
-							<button
-								class="gap"
-								aria-label="поставити playhead між реченнями"
-								onclick={() => setBetween(idx + 1)}
-							>
-								{#if playhead?.mode === 'between' && playhead.idx === idx + 1}
-									<span class="caret" aria-hidden="true"></span>
-								{/if}
-							</button>
-						{/if}
+						{#if false}{/if}
 					{/each}
 				</div>
 				{@const nextIdx = pi + 1 < essay.paragraphs.length ? idxOf(pi + 1, 0) : flat.length}
-				<button class="pgap" aria-label="поставити playhead між абзацами" onclick={() => setBetween(nextIdx)}>
-					{#if playhead?.mode === 'between' && playhead.idx === nextIdx}
-						<span class="caret" aria-hidden="true"></span>
-					{/if}
-				</button>
 			{/each}
 		</article>
 	{:else}
@@ -345,23 +359,46 @@
 	/>
 {/if}
 
-<div class="dock" class:shift={!!selectedSentence}></div>
+<button class="settings-btn" onclick={() => (settingsOpen = true)} aria-label="налаштування">⚙</button>
+
+{#if settingsOpen}
+	<SettingsModal
+		settings={settings}
+		locked={data.engineLocked}
+		onclose={() => (settingsOpen = false)}
+		onsaved={reloadEssay}
+	/>
+{/if}
+
+
 <div class="controls">
-	<div class="ph">
-		<span>{playheadLabel}</span>
-		{#if ttsState}
-			<span>TTS {ttsState.done}/{ttsState.total}</span>
-		{/if}
-	</div>
-	<div class="row">
-		{#each PLAY_ACTIONS as action}
-			<button class="black" onclick={() => playAction(action.key)} disabled={!essay || ttsBusy}>{action.label}</button>
-		{/each}
-	</div>
-	<div class="row">
-		{#each TTS_ACTIONS as action}
-			<button class="black" onclick={() => ttsAction(action.key)} disabled={!essay || ttsBusy}>{action.label}</button>
-		{/each}
+	<div class="row merged">
+		<button class="black" onclick={stopPlayback} disabled={playingKey === null}>стоп</button>
+		<div class="combo">
+			<button
+				class="black"
+				onclick={(e) => playAction(playAmount)}
+				disabled={!essay || ttsBusy || !range(playAmount as 'prev' | 'next' | 'paragraph' | 'after').some((i) => flat[i]?.audio)}
+			>▶ відтворити</button>
+			<select bind:value={playAmount} aria-label="кількість для відтворення">
+				{#each AMOUNTS as a}
+					<option value={a.value}>{a.label}</option>
+				{/each}
+			</select>
+		</div>
+		<div class="combo">
+			<button
+				class="black"
+				onclick={(e) => ttsAction(ttsAmount, e.shiftKey)}
+				title="Shift — переозвучити"
+				disabled={!essay || ttsBusy || range(ttsAmount as 'prev' | 'next' | 'paragraph' | 'after').length === 0}
+			>TTS</button>
+			<select bind:value={ttsAmount} aria-label="кількість для TTS">
+				{#each AMOUNTS as a}
+					<option value={a.value}>{a.label}</option>
+				{/each}
+			</select>
+		</div>
 	</div>
 </div>
 
@@ -372,10 +409,8 @@
 <style>
 	main {
 		margin-left: 320px;
-		padding: 48px 48px 240px;
-	}
-	main.shift {
-		padding-right: 408px;
+		margin-right: 360px;
+		padding: 48px 48px 160px;
 	}
 	article {
 		max-width: 720px;
@@ -399,8 +434,8 @@
 		margin-top: 10px;
 	}
 	.p {
-		line-height: 1.8;
-		margin: 0 0 0;
+		line-height: 26px;
+		margin: 0 0 20px;
 	}
 	.p.heading {
 		font-size: 24px;
@@ -419,8 +454,13 @@
 	}
 	.s {
 		cursor: pointer;
+		position: relative;
+		padding: 0 2px;
 	}
 	.s:hover {
+		color: var(--ink);
+	}
+	.s.empty {
 		color: var(--ink);
 	}
 	.s.done {
@@ -429,63 +469,70 @@
 	.s.update {
 		color: var(--yellow);
 	}
-	.s.selected {
-		font-weight: 700;
+	.s.empty.selected {
+		background: #e5e5e5;
+		color: var(--ink);
 	}
-	.s.playing {
-		background: var(--ink);
+	.s.done.selected {
+		background: var(--green);
 		color: #fff;
 	}
+	.s.update.selected {
+		background: var(--yellow);
+		color: #fff;
+	}
+	.s.playing {
+		outline: 1.5px solid #c00;
+		border-radius: 3px;
+	}
 	.caret {
-		display: inline-block;
+		position: absolute;
+		left: -6px;
+		top: 1px;
 		width: 3px;
-		height: 14px;
-		background: var(--ink);
-		border-radius: 1px;
-		vertical-align: -2px;
-		margin-right: 3px;
+		height: 18px;
+		background: #c00;
+		border-radius: 0;
 	}
 	.gap .caret {
+		left: 50%;
+		transform: translateX(-50%);
 		margin: 0;
+	}
+	.caret.end {
+		left: auto;
+		right: -5px;
 	}
 	.gap {
 		display: inline-block;
-		width: 8px;
+		width: 0;
 		height: 1em;
 		vertical-align: -2px;
 		text-align: center;
+		position: relative;
+		margin: 0 -4px;
+		padding: 0 4px;
 	}
 	.pgap {
 		display: block;
 		width: 100%;
 		height: 16px;
 		text-align: left;
+		position: relative;
 	}
 	.controls {
 		position: fixed;
-		left: 50%;
-		bottom: 24px;
-		transform: translateX(-50%);
+		left: 320px;
+		right: 360px;
+		bottom: 0;
 		z-index: 40;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 8px;
+		gap: 4px;
 		background: #fff;
-		padding: 12px;
-	}
-	.dock {
-		position: fixed;
-		left: 320px;
-		right: 0;
-		bottom: 0;
-		height: 200px;
-		background: #fff;
-		z-index: 35;
-		pointer-events: none;
-	}
-	.dock.shift {
-		right: 360px;
+		padding: 8px 12px 12px;
+		border-top: 1px solid var(--ink);
 	}
 	.ph {
 		display: flex;
@@ -500,8 +547,50 @@
 		background: var(--ink);
 		color: #fff;
 		border-radius: 3px;
-		padding: 7px 11px;
+		padding: 5px 9px;
 		white-space: nowrap;
+	}
+	.settings-btn {
+		position: fixed;
+		left: 24px;
+		bottom: 24px;
+		z-index: 45;
+		width: 44px;
+		height: 44px;
+		background: transparent;
+		color: var(--ink);
+		border: 0;
+		border-radius: 0;
+		font-size: 26px;
+		display: grid;
+		place-items: center;
+		cursor: pointer;
+	}
+	.ico {
+		font-size: 20px;
+		line-height: 1;
+	}
+	.combo {
+		display: flex;
+		align-items: stretch;
+	}
+	.combo select {
+		font: inherit;
+		background: var(--ink);
+		color: #fff;
+		border: 0;
+		border-radius: 0 3px 3px 0;
+		padding: 0 8px;
+		margin-left: 1px;
+	}
+	.combo .black {
+		border-radius: 3px 0 0 3px;
+	}
+	.patch-mark {
+		font-size: 10px;
+		vertical-align: super;
+		color: currentColor;
+		margin-right: 2px;
 	}
 	.toast {
 		position: fixed;

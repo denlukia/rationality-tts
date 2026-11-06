@@ -48,7 +48,7 @@
 			title: essay.title,
 			level: 'есей',
 			counts: essay.counts,
-			essays: [{ title: essay.title, added: essay.changes.added, removed: essay.changes.removed }],
+			essays: [{ title: essay.title, added: essay.changes.added, removed: essay.changes.removed, required: essay.required }],
 			paths: [essay.path]
 		};
 	}
@@ -58,7 +58,7 @@
 			title: chapter.title,
 			level: 'розділ',
 			counts: chapter.counts,
-			essays: chapter.essays.map((e) => ({ title: e.title, added: e.changes.added, removed: e.changes.removed })),
+			essays: chapter.essays.map((e) => ({ title: e.title, added: e.changes.added, removed: e.changes.removed, required: e.required })),
 			paths: chapter.essays.map((e) => e.path)
 		};
 	}
@@ -69,7 +69,7 @@
 			level: 'книга',
 			counts: book.counts,
 			essays: book.chapters.flatMap((c) =>
-				c.essays.map((e) => ({ title: e.title, added: e.changes.added, removed: e.changes.removed }))
+				c.essays.map((e) => ({ title: e.title, added: e.changes.added, removed: e.changes.removed, required: e.required }))
 			),
 			paths: book.chapters.flatMap((c) => c.essays.map((e) => e.path))
 		};
@@ -85,6 +85,16 @@
 		await invalidateAll();
 	}
 
+	async function setRequired(paths: string[], value: boolean) {
+		dialog = null;
+		await fetch('/api/required', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ paths, value })
+		});
+		await invalidateAll();
+	}
+
 	function summary(counts: Counts): string {
 		return `озвучено ${counts.done}, оновлення ${counts.update}, порожньо ${counts.empty}`;
 	}
@@ -94,11 +104,12 @@
 	<header>
 		<h1>rationality tts</h1>
 		<div class="meta">{essayCount} есеїв · {library.totals.done} озвучено · {library.totals.update} оновлень</div>
+		<div class="meta"><a href="/ipa">ipa / arpabet</a></div>
 	</header>
 
 	<nav>
 		{#each library.books as book}
-			<div class="row book">
+			<div class="row book" class:notreq={book.chapters.every((c) => c.essays.every((e) => !e.required))}>
 				<button
 					class="pie"
 					onclick={(e) => {
@@ -116,7 +127,7 @@
 			</div>
 			{#if openBooks[book.path]}
 				{#each book.chapters as chapter}
-					<div class="row chapter">
+					<div class="row chapter" class:notreq={chapter.essays.every((e) => !e.required)}>
 						<button
 							class="pie"
 							onclick={(e) => {
@@ -134,7 +145,7 @@
 					</div>
 					{#if openChapters[chapter.path]}
 						{#each chapter.essays as essay}
-							<div class="row essay" class:active={selectedPath === essay.path}>
+							<div class="row essay" class:active={selectedPath === essay.path} class:notreq={!essay.required}>
 								<button
 									class="pie"
 									onclick={(e) => {
@@ -146,7 +157,7 @@
 								>
 									<Pie counts={essay.counts} size={10} />
 								</button>
-								<button class="name" onclick={() => onselect(essay.path)}>
+								<button class="name" onclick={() => onselect(essay.path)} title={!essay.required ? 'не потребує TTS' : ''}>
 									<span class="label">{essay.title}</span>
 								</button>
 							</div>
@@ -159,7 +170,7 @@
 </aside>
 
 {#if dialog}
-	<ChangesDialog data={dialog} onclose={() => (dialog = null)} onack={acknowledge} />
+	<ChangesDialog data={dialog} onclose={() => (dialog = null)} onack={acknowledge} onrequired={setRequired} />
 {/if}
 
 <style>
@@ -226,6 +237,12 @@
 	.row.essay.active .label {
 		font-weight: 700;
 		color: var(--ink);
+	}
+	.notreq .label {
+		color: var(--soft);
+	}
+	.notreq .pie {
+		opacity: 0.45;
 	}
 	.row.essay.active .name {
 		font-weight: 700;

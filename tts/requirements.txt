@@ -4,6 +4,7 @@ uvicorn>=0.29
 numpy>=1.26
 soundfile>=0.12
 huggingface_hub>=0.23
+python-multipart>=0.0.9
 
 # Ukrainian stress + IPA frontends (same ones the reference app uses)
 git+https://github.com/patriotyk/ukrainian-word-stress.git
