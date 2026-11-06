@@ -66,6 +66,8 @@
 		}
 	}
 
+	const dirty = $derived(JSON.stringify(draft) !== JSON.stringify(settings));
+
 	onMount(() => {
 		draft = { ...settings, pronunciation: settings.pronunciation ?? { rules: [], dictionaries: [] } };
 		loadVoices(draft.engine);
@@ -85,6 +87,26 @@
 		} finally {
 			saving = false;
 		}
+	}
+
+	async function requestClose() {
+		if (dirty && !saving) {
+			saving = true;
+			try {
+				await fetch('/api/settings', {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify(draft)
+				});
+				await invalidateAll();
+				onsaved?.();
+			} catch {
+				/* ignore */
+			} finally {
+				saving = false;
+			}
+		}
+		onclose();
 	}
 
 	function switchEngine(engine: Engine) {
@@ -205,15 +227,15 @@
 
 <svelte:window
 	onkeydown={(e) => {
-		if (e.key === 'Escape') onclose();
+		if (e.key === 'Escape') requestClose();
 	}}
 />
 
-<div class="overlay" onclick={onclose} role="presentation">
+<div class="overlay" onclick={requestClose} role="presentation">
 	<div class="panel" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
 		<div class="top">
 			<h2>налаштування</h2>
-			<button class="close" onclick={onclose}>закрити</button>
+			<button class="close" onclick={requestClose}>закрити</button>
 		</div>
 
 		<div class="block">
