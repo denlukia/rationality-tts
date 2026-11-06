@@ -124,6 +124,11 @@
 	</div>
 
 	<div class="block">
+		<div class="label">після правил вимови</div>
+		<p class="original">{sentence.pronounced}</p>
+	</div>
+
+	<div class="block">
 		<div class="label">патч</div>
 		<textarea
 			bind:this={textarea}

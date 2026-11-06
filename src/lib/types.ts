@@ -13,6 +13,7 @@ export interface SentenceView {
 	patch: string;
 	replaced: string;
 	verbalized: string;
+	pronounced: string;
 	audio: AudioRef | null;
 }
 
@@ -84,6 +85,7 @@ export interface SentenceState {
 	patch: string;
 	replaced: string;
 	verbalized: string;
+	pronounced: string;
 	audio: AudioRef | null;
 }
 

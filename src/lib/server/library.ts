@@ -120,6 +120,7 @@ function stateFrom(found: FoundSentence, rec: EssayRec): SentenceState {
 		patch,
 		replaced: applyReplacements(found.sentence.text, readSettings().replacements),
 		verbalized: verbalized(found.sentence.text),
+		pronounced: ttsText(found.sentence.text, patch),
 		audio:
 			audio && fileExists(audio.file)
 				? { url: audioUrl(audio.file), file: audio.file, duration: audio.duration }
@@ -178,6 +179,7 @@ function essayParagraphView(essay: ParsedEssay, rec: EssayRec): ParagraphView[] 
 					patch,
 					replaced: applyReplacements(s.text, readSettings().replacements),
 					verbalized: verbalized(s.text),
+					pronounced: ttsText(s.text, patch),
 					audio: available
 						? { url: audioUrl(audio.file), file: audio.file, duration: audio.duration }
 						: null
