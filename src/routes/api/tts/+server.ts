@@ -39,7 +39,8 @@ export const POST: RequestHandler = async ({ request }) => {
 				voice,
 				engine: settings.engine,
 				speed: settings.speed,
-				gap_sentence: settings.sentenceGap
+				gap_sentence: settings.sentenceGap,
+				dictionaries: settings.pronunciation?.dictionaries ?? []
 			}),
 			signal: AbortSignal.timeout(180_000)
 		});

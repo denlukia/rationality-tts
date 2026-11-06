@@ -17,6 +17,7 @@
 			sentenceGap: number;
 			paragraphGap: number;
 			replacements: { from: string; to: string }[];
+			pronunciation: { rules: { key: string; value: string; type: 'phoneme' | 'alias'; caseSensitive: boolean }[]; dictionaries: { id: string; version: string }[] };
 		}
 	);
 
@@ -352,6 +353,7 @@
 		si={selected!.si}
 		busy={ttsBusy}
 		playing={playingKey === `${selected!.pi}:${selected!.si}`}
+		engine={settings.engine}
 		onclose={() => (selected = null)}
 		{onsave}
 		{ontts}

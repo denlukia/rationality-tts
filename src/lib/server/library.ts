@@ -31,7 +31,7 @@ import {
 	type EssayRec
 } from './db';
 import { hashText, verbalizeNumbers } from './text';
-import { applyReplacements, readSettings } from './settings';
+import { applyReplacements, applyPronunciation, readSettings } from './settings';
 
 export function effectiveText(original: string, patch?: string): string {
 	const p = (patch ?? '').trim();
@@ -45,7 +45,8 @@ export function verbalized(original: string): string {
 
 export function ttsText(original: string, patch?: string): string {
 	const p = (patch ?? '').trim();
-	return p || verbalized(original);
+	const base = p || verbalized(original);
+	return applyPronunciation(base, readSettings().pronunciation?.rules);
 }
 
 export function audioKey(original: string, patch?: string): string {
@@ -54,7 +55,7 @@ export function audioKey(original: string, patch?: string): string {
 	// Keep the Holos key byte-identical to the pre-engine formula so existing
 	// audio is not invalidated; Drama gets its own namespace and voice.
 	const voice = s.engine === 'drama' ? `drama:${s.dramaVoice}` : s.voice;
-	return hashText(`${final}\n${voice}\n${s.speed}\n${s.sentenceGap}\n${s.paragraphGap}\n${JSON.stringify(s.replacements)}`, 24);
+	return hashText(`${final}\n${voice}\n${s.speed}\n${s.sentenceGap}\n${s.paragraphGap}\n${JSON.stringify(s.replacements)}\n${JSON.stringify(s.pronunciation)}`, 24);
 }
 
 function emptyCounts(): Counts {

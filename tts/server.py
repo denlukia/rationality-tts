@@ -401,6 +401,7 @@ class SynthBody(BaseModel):
     gap_sentence: Optional[float] = None
     engine: Optional[str] = None
     speed: Optional[float] = None
+    dictionaries: Optional[list] = None
 
 
 class PreviewBody(BaseModel):
@@ -408,6 +409,7 @@ class PreviewBody(BaseModel):
     text: Optional[str] = None
     engine: Optional[str] = None
     speed: Optional[float] = None
+    dictionaries: Optional[list] = None
 
 
 def _safe_engine() -> Optional[str]:
@@ -455,7 +457,7 @@ def _holos_synth(text: str, voice: Optional[str], key: str, speed: float) -> tup
     return file, total
 
 
-def _drama_synth_remote(text: str, voice: Optional[str], key: str, speed: float) -> tuple[str, float]:
+def _drama_synth_remote(text: str, voice: Optional[str], key: str, speed: float, dictionaries: Optional[list] = None) -> tuple[str, float]:
     import urllib.error
     import urllib.request
 
@@ -469,10 +471,14 @@ def _drama_synth_remote(text: str, voice: Optional[str], key: str, speed: float)
             if ref_audio:
                 payload["ref_audio"] = ref_audio
                 payload["ref_text"] = ref_text
+            if dictionaries:
+                payload["pronunciation_dictionary"] = dictionaries
         else:
             payload = {"input": text, "response_format": "wav"}
             if ref_audio:
                 payload["references"] = [{"audio_path": ref_audio, "text": ref_text}]
+            if dictionaries:
+                payload["pronunciation_dictionary"] = dictionaries
         url = f"{DRAMA_REMOTE_URL}/v1/audio/speech"
         req = urllib.request.Request(
             url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -501,9 +507,9 @@ def _drama_synth_remote(text: str, voice: Optional[str], key: str, speed: float)
     return file, duration
 
 
-def _drama_synth(text: str, voice: Optional[str], key: str, speed: float) -> tuple[str, float]:
+def _drama_synth(text: str, voice: Optional[str], key: str, speed: float, dictionaries: Optional[list] = None) -> tuple[str, float]:
     if DRAMA_BACKEND == "remote":
-        return _drama_synth_remote(text, voice, key, speed)
+        return _drama_synth_remote(text, voice, key, speed, dictionaries)
     unload_holos()
     ref_audio, ref_text = resolve_drama_voice(voice)
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -555,7 +561,7 @@ def synth(body: SynthBody):
 
     with _synth_lock:
         if engine == "drama":
-            file, duration = _drama_synth(text, body.voice, body.key, speed)
+            file, duration = _drama_synth(text, body.voice, body.key, speed, body.dictionaries)
         else:
             stop_drama()
             file, duration = _holos_synth(text, body.voice, body.key, speed)
@@ -591,7 +597,7 @@ def preview(body: PreviewBody):
             pass
     with _synth_lock:
         if engine == "drama":
-            file, duration = _drama_synth(text, voice or None, key, speed)
+            file, duration = _drama_synth(text, voice or None, key, speed, body.dictionaries)
         else:
             stop_drama()
             file, duration = _holos_synth(text, voice or VOICE, key, speed)

@@ -6,6 +6,18 @@ export interface Replacement {
 	to: string;
 }
 
+export interface PronunciationRule {
+	key: string;
+	value: string;
+	type: 'phoneme' | 'alias';
+	caseSensitive?: boolean;
+}
+
+export interface PronunciationDictionary {
+	id: string;
+	version: string;
+}
+
 export const SETTINGS_PATH = path.resolve(process.env.SETTINGS_FILE ?? path.join(process.env.DATA_DIR ?? 'data', 'settings.json'));
 
 export interface AppSettings {
@@ -16,6 +28,7 @@ export interface AppSettings {
 	sentenceGap: number;
 	paragraphGap: number;
 	replacements: Replacement[];
+	pronunciation: { rules: PronunciationRule[]; dictionaries: PronunciationDictionary[] };
 }
 
 export type Engine = 'holos' | 'drama';
@@ -30,7 +43,8 @@ const DEFAULTS: AppSettings = {
 	replacements: [
 		{ from: '—', to: '...' },
 		{ from: '–', to: '...' }
-	]
+	],
+	pronunciation: { rules: [], dictionaries: [] }
 };
 
 /** `TTS_ENGINE` locks the engine (used by the Drama-only Colab image). */
@@ -54,6 +68,21 @@ export function applyReplacements(text: string, replacements: Replacement[]): st
 	let out = text;
 	for (const r of replacements ?? []) {
 		if (r.from) out = out.split(r.from).join(r.to ?? '');
+	}
+	return out;
+}
+
+export function applyPronunciation(text: string, rules: PronunciationRule[] | undefined): string {
+	let out = text;
+	for (const r of rules ?? []) {
+		if (!r.key || !r.value) continue;
+		const replacement = r.type === 'phoneme' ? `<|phoneme_start|>${r.value}<|phoneme_end|>` : r.value;
+		if (r.caseSensitive) {
+			out = out.split(r.key).join(replacement);
+		} else {
+			const esc = r.key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+			out = out.replace(new RegExp(esc, 'gi'), replacement);
+		}
 	}
 	return out;
 }

@@ -7,6 +7,7 @@
 		si,
 		busy,
 		playing,
+		engine = 'holos',
 		onclose,
 		onsave,
 		ontts,
@@ -17,6 +18,7 @@
 		si: number;
 		busy: boolean;
 		playing: boolean;
+		engine?: 'holos' | 'drama';
 		onclose: () => void;
 		onsave: (patch: string) => Promise<void>;
 		ontts: () => void;
@@ -25,6 +27,7 @@
 
 	let draft = $state('');
 	let saving = $state(false);
+	let phonemeBusy = $state(false);
 	let textarea: HTMLTextAreaElement | undefined = $state();
 	let selection = $derived(`${pi}:${si}`);
 
@@ -50,6 +53,42 @@
 			textarea.focus();
 			textarea.selectionStart = textarea.selectionEnd = start + 1;
 		});
+	}
+
+	async function toPhonemes() {
+		if (!textarea || phonemeBusy) return;
+		const start = textarea.selectionStart;
+		const end = textarea.selectionEnd;
+		const hasSel = start !== end;
+		const text = hasSel ? draft.slice(start, end) : (draft.trim() || sentence.text);
+		if (!text.trim()) return;
+		phonemeBusy = true;
+		try {
+			const r = await fetch('/api/ipa', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ text })
+			});
+			if (!r.ok) return;
+			const data = (await r.json()) as { ipa?: string };
+			if (!data.ipa) return;
+			const tag = `<|phoneme_start|>${data.ipa}<|phoneme_end|>`;
+			if (hasSel) {
+				const next = draft.slice(0, start) + tag + draft.slice(end);
+				draft = next;
+				requestAnimationFrame(() => {
+					if (!textarea) return;
+					textarea.focus();
+					textarea.selectionStart = textarea.selectionEnd = start + tag.length;
+				});
+			} else {
+				draft = tag;
+			}
+		} catch {
+			/* ignore */
+		} finally {
+			phonemeBusy = false;
+		}
 	}
 
 	async function save() {
@@ -97,6 +136,11 @@
 		></textarea>
 		<div class="stress-row">
 			<button class="black small-stress" onclick={insertStress} title="наголос на літеру перед курсором">додати наголос</button>
+			{#if engine === 'drama'}
+				<button class="black small-stress" onclick={toPhonemes} disabled={phonemeBusy} title="перетворити текст на фонеми (IPA)">
+					{phonemeBusy ? '…' : 'фонеми (IPA)'}
+				</button>
+			{/if}
 		</div>
 	</div>
 

@@ -18,6 +18,7 @@
 			sentenceGap: number;
 			paragraphGap: number;
 			replacements: { from: string; to: string }[];
+			pronunciation: { rules: { key: string; value: string; type: 'phoneme' | 'alias'; caseSensitive: boolean }[]; dictionaries: { id: string; version: string }[] };
 		};
 		locked?: boolean;
 		onclose: () => void;
@@ -31,7 +32,8 @@
 		speed: 1,
 		sentenceGap: 0.22,
 		paragraphGap: 0.4,
-		replacements: [] as { from: string; to: string }[]
+		replacements: [] as { from: string; to: string }[],
+		pronunciation: { rules: [] as { key: string; value: string; type: 'phoneme' | 'alias'; caseSensitive: boolean }[], dictionaries: [] as { id: string; version: string }[] }
 	});
 	let voices = $state<{
 		presets: string[];
@@ -65,7 +67,7 @@
 	}
 
 	onMount(() => {
-		draft = { ...settings };
+		draft = { ...settings, pronunciation: settings.pronunciation ?? { rules: [], dictionaries: [] } };
 		loadVoices(draft.engine);
 	});
 
@@ -400,11 +402,45 @@
 			</button>
 		</div>
 
-		<div class="actions">
-			<button class="black" onclick={save} disabled={saving || uploading}>
-				{saving ? 'зберігаю…' : 'зберегти'}
-			</button>
+	<div class="block">
+		<div class="label">словник вимови</div>
+		<p class="hint">
+			Правила вимови: фонемний запис (IPA/ARPAbet) або заміна тексту. Застосовуються до тексту перед озвученням.
+		</p>
+		<div class="repl-list">
+			{#each draft.pronunciation.rules as r, i}
+				<div class="repl-row">
+					<input class="repl-input" bind:value={r.key} placeholder="слово" />
+					<select class="repl-select" bind:value={r.type}>
+						<option value="phoneme">фонеми</option>
+						<option value="alias">заміна</option>
+					</select>
+					<input class="repl-input" bind:value={r.value} placeholder={r.type === 'phoneme' ? 'IPA…' : 'на'} />
+					<label class="case">
+						<input type="checkbox" bind:checked={r.caseSensitive} /> Aa
+					</label>
+					<button class="small" onclick={() => draft.pronunciation.rules.splice(i, 1)}>×</button>
+				</div>
+			{/each}
 		</div>
+		<button class="black" onclick={() => draft.pronunciation.rules.push({ key: '', value: '', type: 'phoneme', caseSensitive: false })}>
+			додати правило
+		</button>
+
+		<div class="sublabel">хмарні словники Fish Audio (id + version)</div>
+		<div class="repl-list">
+			{#each draft.pronunciation.dictionaries as d, i}
+				<div class="repl-row">
+					<input class="repl-input" bind:value={d.id} placeholder="dictionary id" />
+					<input class="repl-input" bind:value={d.version} placeholder="version id" />
+					<button class="small" onclick={() => draft.pronunciation.dictionaries.splice(i, 1)}>×</button>
+				</div>
+			{/each}
+		</div>
+		<button class="black" onclick={() => draft.pronunciation.dictionaries.push({ id: '', version: '' })}>
+			додати словник
+		</button>
+	</div>
 	</div>
 </div>
 
@@ -576,13 +612,22 @@
 		align-items: center;
 		gap: 6px;
 	}
-	.repl-input {
-		flex: 1;
+	.sublabel {
+		color: var(--dim);
+		margin: 16px 0 8px;
+	}
+	.repl-select {
 		font: inherit;
 		background: #f7f7f7;
 		border: 0;
 		border-radius: 3px;
 		padding: 6px 8px;
-		min-width: 0;
+	}
+	.case {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		color: var(--dim);
+		font-size: 13px;
 	}
 </style>
