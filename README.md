@@ -145,17 +145,49 @@ decide what to patch and re-synthesize. Nothing is regenerated automatically.
 
 ## Storage
 
-`data/db.json` is the whole database. It stores, per essay:
-
-- the acknowledged paragraph hashes (the “known” baseline),
-- patches keyed by paragraph hash + sentence hash,
-- audio file names and durations for each synthesized sentence.
+The database is split into **one JSON file per essay** under `data/db/` (mirroring the
+content tree). Each file stores the acknowledged paragraph hashes, patches and audio
+metadata for that essay only. This keeps git diffs and merges local: editing one sentence
+touches one small file instead of rewriting a multi-megabyte `db.json`.
 
 `data/audio/<sha1-of-text>.opus` contains one compressed clip per sentence. Opus at 24 kbps
 mono is roughly **11 MB per hour** of speech, so a fully narrated library stays small enough
-for a normal git repository. Commit `data/` if you want the narration to travel with the app;
-on very large libraries consider Git LFS. Without ffmpeg the sidecar writes `.wav` instead
-(much larger) and the app still works.
+for a normal git repository. Commit `data/` (or the separate data repo) if you want the
+narration to travel with the app; on very large libraries consider Git LFS. Without ffmpeg
+the sidecar writes `.wav` instead (much larger) and the app still works.
+
+## Syncing across machines
+
+`data/` can be a git repository of its own (the project ships a separate
+`rationality-tts-data` repo for this). The app has a tiny session widget in the bottom-left
+corner:
+
+- `⏱ 9:58` shows the remaining runtime when `SESSION_BUDGET_SEC` is set (Colab).
+- a green/amber/red dot shows whether the working tree is clean, dirty or has a push error.
+- click it to see the last commit and **зберегти зараз**.
+
+The server auto-commits every 5 minutes (`AUTOSAVE_SEC`) when there are changes. On Colab
+the app is gated behind a GitHub token (fine-grained PAT with Contents read/write on the
+data repo): paste it on the first screen and the server clones the data repo into `data/`.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `SESSION_REQUIRE_AUTH` | `0` | set to `1` to require a GitHub token to use the app |
+| `SESSION_BUDGET_SEC` | `0` | runtime budget shown by the timer (0 = hidden) |
+| `GITHUB_REPO` | `denlukia/rationality-tts-data` | data repo cloned by the session screen |
+| `AUTOSAVE_SEC` | `300` | auto-commit interval (0 = off) |
+| `GITHUB_TOKEN` | (none) | optional token supplied at boot instead of the UI |
+| `DEFAULT_ENGINE` | (none) | force `holos` or `drama` (also `TTS_ENGINE`) |
+
+## Running on Colab (Drama 3 only)
+
+See `colab/drama.ipynb`. It installs Node + the SvelteKit app, SGLang-Omni and the Drama 3
+int4 checkpoint, then exposes the app through a `cloudflared` tunnel. The first cold start
+takes ~10–20 minutes; with Pro+ continuous execution a runtime lives up to 24 h.
+
+On Colab the engine is locked to Drama (`TTS_ENGINE=drama`, `DRAMA_BACKEND=remote`,
+pointing at the local SGLang server). HolosTTS is never installed there; the sidecar
+returns static voice presets so listing voices does not load a model.
 
 ## Configuration
 
@@ -172,6 +204,9 @@ on very large libraries consider Git LFS. Without ffmpeg the sidecar writes `.wa
 | `HOLOS_BITRATE` | `24k` | Opus bitrate |
 | `HOLOS_SPEED` | `1.0` | default speaking speed |
 | `TTS_ENGINE` | `holos` | default engine when the request omits one |
+| `DRAMA_BACKEND` | `worker` | `worker` (local MLX) or `remote` (SGLang/vLLM) |
+| `DRAMA_REMOTE_URL` | (none) | remote Drama server address |
+| `DRAMA_REMOTE_API` | `sglang` | `sglang` or `vllm` request schema |
 | `DRAMA_MODEL` | `models/fish-audio-drama-3-3bit` | local Drama 3 MLX checkpoint |
 | `DRAMA_PYTHON` | `.venv-drama/bin/python` | interpreter with `mlx-audio` installed |
 | `DRAMA_IDLE` | `300` | seconds before the idle Drama worker is stopped |
@@ -190,13 +225,17 @@ on very large libraries consider Git LFS. Without ffmpeg the sidecar writes `.wa
 
 ```
 content/                  # git submodule: rationality-ua
-data/db.json              # patches, hashes, audio paths
+data/db/                  # one JSON file per essay
 data/audio/*.opus         # one clip per sentence
-src/lib/server/content.ts # Markdown scan, sentence split, hashing
+src/lib/server/db.ts      # per-essay DB
 src/lib/server/library.ts # status aggregation, change detection
-src/lib/server/db.ts      # JSON DB
-src/routes/api/           # essay, patch, tts, ack
-tts/server.py             # engine router sidecar (HolosTTS + Drama 3 worker)
+src/lib/server/session.ts # git sync, timer, auth
+src/lib/components/SessionWidget.svelte
+src/lib/components/LoginScreen.svelte
+src/routes/api/session/   # connect, commit, status
+src/hooks.server.ts       # auth gate
+colab/drama.ipynb         # Colab workspace for Drama 3
+tts/server.py             # engine router sidecar (HolosTTS + Drama 3 worker/remote)
 tts/drama_worker.py       # Drama 3 model process (own venv, JSON-lines protocol)
 ```
 
