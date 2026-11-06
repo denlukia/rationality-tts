@@ -17,3 +17,7 @@ data/audio/*.tmp
 /models/
 # voice encoder source tree is a local dependency clone
 /tts/HolosTTS/
+
+# test artifacts
+stress_test/
+stress_test_drama/
