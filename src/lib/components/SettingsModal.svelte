@@ -446,13 +446,13 @@
 			додати словник
 		</button>
 	</div>
-	</div>
 
 	<div class="actions">
 		<button class="black" onclick={cancel} disabled={saving}>скасувати</button>
 		<button class="black" onclick={save} disabled={saving}>
 			{saving ? 'зберігаю…' : 'зберегти'}
 		</button>
+	</div>
 	</div>
 </div>
 
